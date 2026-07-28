@@ -597,16 +597,18 @@ document.addEventListener('click', async e => {
     $('#sec-' + sec.id).querySelector('.section-body').innerHTML = sectionBodyHTML(sec);
   }
   else if (action === 'remover-item') {
-    if (!confirm('Remover esta fonte e suas informações? As fotos dela também serão apagadas.')) return;
-    const sec = sectionById(act.dataset.sec);
-    const data = getSectionData(sec.id);
-    data[sec.arrayKey] = (data[sec.arrayKey] || []).filter(it => it.id !== act.dataset.item);
-    touchNucleo();
-    const dead = (state._nucleoPhotos || []).filter(ph => ph.section === sec.id && ph.item === act.dataset.item);
-    for (const ph of dead) await dbDel('photos', ph.id);
-    state._nucleoPhotos = (state._nucleoPhotos || []).filter(ph => !(ph.section === sec.id && ph.item === act.dataset.item));
-    $('#sec-' + sec.id).querySelector('.section-body').innerHTML = sectionBodyHTML(sec);
-    updateSectionCheck(sec.id);
+    const secId = act.dataset.sec, itemId = act.dataset.item;
+    confirmModal('Remover fonte', 'Remover esta fonte e suas informações? As fotos dela também serão apagadas.', 'Remover', async () => {
+      const sec = sectionById(secId);
+      const data = getSectionData(sec.id);
+      data[sec.arrayKey] = (data[sec.arrayKey] || []).filter(it => it.id !== itemId);
+      touchNucleo();
+      const dead = (state._nucleoPhotos || []).filter(ph => ph.section === sec.id && ph.item === itemId);
+      for (const ph of dead) { await dbDel('photos', ph.id); queueCloudDelete('foto', ph.id); }
+      state._nucleoPhotos = (state._nucleoPhotos || []).filter(ph => !(ph.section === sec.id && ph.item === itemId));
+      $('#sec-' + sec.id).querySelector('.section-body').innerHTML = sectionBodyHTML(sec);
+      updateSectionCheck(sec.id);
+    });
   }
   else if (action === 'gps') {
     captureGPS(act);
@@ -651,24 +653,31 @@ document.addEventListener('click', async e => {
   }
   else if (action === 'apagar-projeto') {
     const p = state.project;
-    if (!confirm(`Apagar o projeto “${p.nome}” com todos os núcleos e fotos?\n\nEssa ação não pode ser desfeita. Considere exportar um backup antes.`)) return;
-    if (!confirm('Tem certeza? Digite OK para confirmar a exclusão definitiva.')) return;
-    const nucleos = await dbByIndex('nucleos', 'byProject', p.id);
-    for (const n of nucleos) await dbDel('nucleos', n.id);
-    const photos = await dbByIndex('photos', 'byProject', p.id);
-    for (const ph of photos) await dbDel('photos', ph.id);
-    await dbDel('projects', p.id);
-    toast('Projeto apagado.');
-    location.hash = '#/';
+    confirmModal('Apagar projeto',
+      `Apagar “${p.nome}” com todos os núcleos e fotos? Some deste aparelho e da nuvem da equipe. Essa ação não pode ser desfeita.`,
+      'Apagar definitivamente', async () => {
+        const nucleos = await dbByIndex('nucleos', 'byProject', p.id);
+        for (const n of nucleos) await dbDel('nucleos', n.id);
+        const photos = await dbByIndex('photos', 'byProject', p.id);
+        for (const ph of photos) await dbDel('photos', ph.id);
+        await dbDel('projects', p.id);
+        queueCloudDelete('projeto', p.id);
+        toast('Projeto apagado.');
+        location.hash = '#/';
+      });
   }
   else if (action === 'apagar-nucleo') {
     const n = state.nucleo;
-    if (!confirm(`Apagar o núcleo “${n.nome}” com todas as informações e fotos?`)) return;
-    const photos = await dbByIndex('photos', 'byNucleo', n.id);
-    for (const ph of photos) await dbDel('photos', ph.id);
-    await dbDel('nucleos', n.id);
-    toast('Núcleo apagado.');
-    location.hash = '#/p/' + state.project.id;
+    confirmModal('Apagar núcleo',
+      `Apagar o núcleo “${n.nome}” com todas as informações e fotos? Some deste aparelho e da nuvem da equipe.`,
+      'Apagar', async () => {
+        const photos = await dbByIndex('photos', 'byNucleo', n.id);
+        for (const ph of photos) await dbDel('photos', ph.id);
+        await dbDel('nucleos', n.id);
+        queueCloudDelete('nucleo', n.id);
+        toast('Núcleo apagado.');
+        location.hash = '#/p/' + state.project.id;
+      });
   }
   else if (action === 'imprimir') {
     window.print();
@@ -763,6 +772,19 @@ document.addEventListener('click', e => {
   if (e.target.closest('[data-action="fechar-modal"]')) closeModal();
 });
 
+/* confirmação em modal próprio: window.confirm não funciona em PWA
+   instalada no iOS (o toque parecia "não fazer nada") */
+function confirmModal(title, text, okLabel, onOk) {
+  openModal(`
+    <h3>${esc(title)}</h3>
+    <p>${esc(text)}</p>
+    <div class="row gap right">
+      <button class="btn" data-action="fechar-modal">Cancelar</button>
+      <button class="btn danger" id="confirmOk">${esc(okLabel)}</button>
+    </div>`);
+  $('#confirmOk').addEventListener('click', () => { closeModal(); onOk(); });
+}
+
 function promptModal(title, label, placeholder, onOk) {
   openModal(`
     <h3>${esc(title)}</h3>
@@ -811,9 +833,15 @@ async function openPhotoModal(photoId) {
       if (cap) cap.textContent = ph.caption;
     }
   });
-  $('#delPhoto').addEventListener('click', async () => {
-    if (!confirm('Apagar esta foto?')) return;
+  let armado = false;
+  $('#delPhoto').addEventListener('click', async e => {
+    if (!armado) {
+      armado = true;
+      e.target.textContent = '⚠ Toque de novo para apagar';
+      return;
+    }
     await dbDel('photos', ph.id);
+    queueCloudDelete('foto', ph.id);
     state._nucleoPhotos = (state._nucleoPhotos || []).filter(x => x.id !== ph.id);
     const fig = document.querySelector(`.thumb[data-photo="${ph.id}"]`);
     if (fig) fig.remove();

@@ -94,6 +94,7 @@ a.card:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--pret
 .btn.big { width: 100%; margin: 4px 0 12px; font-size: 16px; min-height: 52px; }
 .btn.small { padding: 7px 14px; min-height: 38px; font-size: 14px; box-shadow: 2px 2px 0 var(--preto); }
 .btn.danger-link { background: transparent; border-color: var(--verm); color: var(--verm); box-shadow: none; }
+.btn.danger { background: var(--verm); color: #fff; }
 .btn:disabled { opacity: .6; }
 .row { display: flex; align-items: center; }
 .row.gap { gap: 10px; flex-wrap: wrap; }
