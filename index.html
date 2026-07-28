@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Diagnóstico Camelo — Água Camelo</title>
+  <meta name="description" content="Plataforma de diagnóstico de campo da Água Camelo. Projetos, núcleos, fotos, GPS e relatórios — funciona offline.">
+  <meta name="theme-color" content="#0A0A0A">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Diagnóstico">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/"><span class="drop">💧</span> Diagnóstico Camelo</a>
+    <span id="saveStatus" class="save-status"></span>
+  </header>
+  <main id="view"></main>
+  <div id="modal"></div>
+  <div id="toast"></div>
+
+  <script src="js/schema.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/report.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
