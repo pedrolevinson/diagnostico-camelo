@@ -53,6 +53,7 @@ function scheduleSave(key, fn) {
   setSaveStatus('saving');
   clearTimeout(state.saveTimer);
   state.saveTimer = setTimeout(flushSaves, 500);
+  if (typeof scheduleSync === 'function') scheduleSync();
 }
 
 async function flushSaves() {
@@ -146,6 +147,11 @@ async function route() {
       await renderProject();
       return;
     }
+    if (parts[0] === 'central') {
+      state.project = null; state.nucleo = null;
+      await renderCentral();
+      return;
+    }
     state.project = null; state.nucleo = null;
     await renderHome();
   } catch (e) {
@@ -194,6 +200,7 @@ async function renderHome() {
       <p class="muted">Toque no botão abaixo para criar o primeiro (ex.: “MRN — Comunidade do Ajudante”).</p>
     </div>`}
   <button class="btn primary big" data-action="novo-projeto">＋ Novo projeto</button>
+  <div class="card" id="syncCard"></div>
   <div class="row gap">
     <button class="btn" data-action="importar">📥 Importar backup</button>
     <button class="btn" data-action="ajuda">❔ Como usar</button>
@@ -203,6 +210,92 @@ async function renderHome() {
   <input type="file" id="importFile" accept=".json,application/json" hidden>
   `;
   renderInstallButton();
+  updateSyncCard();
+}
+
+async function updateSyncCard() {
+  const el = $('#syncCard');
+  if (!el) return;
+  let status;
+  if (syncState.running) status = '<span class="muted">☁️ Enviando…</span>';
+  else if (!navigator.onLine) status = '<span class="muted">📴 Sem internet, dados guardados no aparelho</span>';
+  else if (syncState.lastError) status = '<span class="sync-err">⚠ ' + esc(syncState.lastError) + '</span>';
+  else if (syncState.lastOk) status = '<span class="sync-ok">✓ Última sincronização: ' + fmtDate(syncState.lastOk) + '</span>';
+  else status = '<span class="muted">Ainda não sincronizado</span>';
+  let pend = '';
+  try {
+    const c = await pendingCounts();
+    const total = c.projects + c.nucleos + c.photos;
+    pend = total ? `<span class="badge">${total} item(ns) a enviar</span>` : '<span class="badge light">nada pendente</span>';
+  } catch (e) { }
+  el.innerHTML = `
+    <div class="project-card-top"><h3>☁️ Nuvem da equipe</h3>${pend}</div>
+    <p class="small" style="margin:6px 0 10px">${status}</p>
+    <div class="row gap">
+      <button class="btn small" data-action="sincronizar" ${syncState.running ? 'disabled' : ''}>☁️ Sincronizar agora</button>
+      <a class="btn small accent" href="#/central">🌐 Central da equipe</a>
+    </div>`;
+}
+
+document.addEventListener('syncchange', updateSyncCard);
+
+/* ---------- CENTRAL (dados de todos os aparelhos) ---------- */
+async function renderCentral() {
+  document.body.classList.remove('report-mode');
+  const code = localStorage.getItem('diagcamelo-central-code');
+  if (!code) {
+    $('#view').innerHTML = `
+    <nav class="crumbs"><a href="#/">‹ Início</a></nav>
+    <div class="card">
+      <h2 style="margin-top:0">🌐 Central da equipe</h2>
+      <p class="muted">Aqui você vê tudo o que a equipe enviou, de todos os aparelhos. Digite o código da equipe para entrar.</p>
+      <label class="field"><span class="field-label">Código da equipe</span>
+        <input type="text" id="centralCode" autocomplete="off" placeholder="código combinado com a equipe">
+      </label>
+      <button class="btn primary" data-action="central-entrar">Entrar</button>
+    </div>`;
+    return;
+  }
+  $('#view').innerHTML = '<nav class="crumbs"><a href="#/">‹ Início</a></nav><div class="card empty"><p>Consultando a central…</p></div>';
+  let cloud;
+  try {
+    cloud = await fetchPainel(code);
+  } catch (e) {
+    if (String(e.message).includes('incorreto')) localStorage.removeItem('diagcamelo-central-code');
+    $('#view').innerHTML = `<nav class="crumbs"><a href="#/">‹ Início</a></nav>
+      <div class="card"><p>⚠ ${esc(e.message)}</p><a class="btn" href="#/central" onclick="setTimeout(route)">Tentar de novo</a></div>`;
+    return;
+  }
+  state._cloud = cloud;
+  let cards = '';
+  for (const p of cloud.projects) {
+    const nucleos = cloud.nucleos.filter(n => n.project_id === p.id);
+    const fotos = cloud.photos.filter(f => f.project_id === p.id);
+    const thumbs = fotos.slice(0, 8).map(f =>
+      `<figure class="thumb"><img loading="lazy" src="${publicPhotoUrl(f.storage_path)}" alt=""></figure>`).join('');
+    const nucleoLines = nucleos.map(n => {
+      const s2 = (n.dados || {}).s2 || {};
+      const extra = [s2.moradores ? s2.moradores + ' moradores' : '', s2.frequentadores ? s2.frequentadores + ' na EAS' : '']
+        .filter(Boolean).join(' · ');
+      return `<li><strong>${esc(n.nome)}</strong>${extra ? ' <span class="muted small">(' + esc(extra) + ')</span>' : ''}</li>`;
+    }).join('');
+    cards += `
+    <div class="card">
+      <div class="project-card-top"><h3>${esc(p.nome)}</h3>
+        <span class="badge light">${esc((p.device || '') + (p.sync_em ? ' · ' + fmtDate(Date.parse(p.sync_em)) : ''))}</span></div>
+      <p class="muted small">${esc((p.dados || {}).cliente || '')}${(p.dados || {}).local ? ' · ' + esc(p.dados.local) : ''}</p>
+      <div class="badges"><span class="badge">${nucleos.length} núcleo(s)</span><span class="badge">${fotos.length} foto(s)</span></div>
+      ${nucleoLines ? `<ul class="central-nucleos">${nucleoLines}</ul>` : ''}
+      ${thumbs ? `<div class="thumbs">${thumbs}</div>` : ''}
+      <button class="btn small" data-action="central-baixar" data-pid="${p.id}">📥 Baixar para este aparelho</button>
+    </div>`;
+  }
+  $('#view').innerHTML = `
+  <nav class="crumbs"><a href="#/">‹ Início</a></nav>
+  <div class="hero"><h1>🌐 Central da equipe</h1>
+    <p>Tudo o que foi sincronizado por todos os aparelhos. Baixe um projeto para ver o conteúdo completo, editar e gerar o PDF.</p></div>
+  ${cards || '<div class="card empty"><p class="muted">Nada sincronizado ainda. Assim que a equipe enviar dados, eles aparecem aqui.</p></div>'}
+  <button class="btn danger-link" data-action="central-sair">Sair da central</button>`;
 }
 
 function renderInstallButton() {
@@ -540,6 +633,35 @@ document.addEventListener('click', async e => {
   else if (action === 'exportar') {
     exportBackup();
   }
+  else if (action === 'sincronizar') {
+    await flushSaves();
+    syncNow(true).then(updateSyncCard);
+  }
+  else if (action === 'central-entrar') {
+    const code = ($('#centralCode').value || '').trim();
+    if (!code) { $('#centralCode').focus(); return; }
+    localStorage.setItem('diagcamelo-central-code', code);
+    renderCentral();
+  }
+  else if (action === 'central-sair') {
+    localStorage.removeItem('diagcamelo-central-code');
+    location.hash = '#/';
+  }
+  else if (action === 'central-baixar') {
+    const pid = act.dataset.pid;
+    act.disabled = true;
+    act.textContent = '⏳ Baixando…';
+    try {
+      const res = await downloadCloudProject(state._cloud, pid, (i, n) => { act.textContent = `⏳ Baixando fotos ${i}/${n}…`; });
+      toast(`Projeto baixado: ${res.nucleos} núcleo(s), ${res.fotos} foto(s) ✓`, 4000);
+      location.hash = '#/p/' + pid;
+    } catch (e) {
+      console.error(e);
+      act.disabled = false;
+      act.textContent = '📥 Baixar para este aparelho';
+      toast('Falha ao baixar: ' + e.message, 4000);
+    }
+  }
   else if (action === 'importar') {
     $('#importFile').click();
   }
@@ -706,6 +828,7 @@ async function openPhotoModal(photoId) {
     </div>`);
   $('#captionInput').addEventListener('input', e => {
     ph.caption = e.target.value;
+    ph.atualizadoEm = Date.now();
     scheduleSave('photo:' + ph.id, () => dbPut('photos', ph));
     const fig = document.querySelector(`.thumb[data-photo="${ph.id}"]`);
     if (fig) {
