@@ -1,11 +1,13 @@
 /* Diagnóstico Camelo — service worker (offline completo) */
-const CACHE = 'diagcamelo-v2';
+const CACHE = 'diagcamelo-v3';
 const ASSETS = [
   './',
   './index.html',
   './css/app.css',
   './js/schema.js',
   './js/db.js',
+  './js/config.js',
+  './js/sync.js',
   './js/report.js',
   './js/app.js',
   './manifest.webmanifest',
