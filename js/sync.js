@@ -70,6 +70,7 @@ async function syncNow(manual) {
   syncState.running = true;
   syncState.lastError = null;
   _notifySync();
+  processTombstones();
   try {
     const [projects, nucleos, photos] = await Promise.all([
       dbAll('projects'), dbAll('nucleos'), dbAll('photos')
@@ -153,6 +154,38 @@ function triggerDriveMirror() {
       .catch(() => { });
   } catch (e) { }
 }
+
+/* ---------- exclusões propagadas para a nuvem (fila offline) ---------- */
+let _tombstonesRunning = false;
+
+function queueCloudDelete(tipo, id) {
+  const fila = JSON.parse(localStorage.getItem('diagcamelo-tombstones') || '[]');
+  fila.push({ tipo, id });
+  localStorage.setItem('diagcamelo-tombstones', JSON.stringify(fila));
+  processTombstones();
+}
+
+async function processTombstones() {
+  if (_tombstonesRunning || !navigator.onLine) return;
+  _tombstonesRunning = true;
+  try {
+    let fila = JSON.parse(localStorage.getItem('diagcamelo-tombstones') || '[]');
+    while (fila.length) {
+      const item = fila[0];
+      const res = await fetch('https://diagnostico-camelo.vercel.app/api/apagar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(item)
+      });
+      if (!res.ok) break;
+      fila = fila.slice(1);
+      localStorage.setItem('diagcamelo-tombstones', JSON.stringify(fila));
+    }
+  } catch (e) { /* sem rede ou servidor fora: tenta de novo no próximo sync */ }
+  _tombstonesRunning = false;
+}
+
+window.addEventListener('online', processTombstones);
 
 /* dispara sozinho: ao abrir, ao voltar a internet e pouco depois de cada edição */
 let _syncDebounce = null;
