@@ -28,10 +28,12 @@ export default async function handler(req, res) {
   });
 
   try {
-    /* fotos pendentes */
-    const pend = await (await sb(`/rest/v1/photos?mirrored_em=is.null&select=*&order=ts.asc&limit=${LOTE}`)).json();
-    if (!Array.isArray(pend)) throw new Error('consulta photos falhou: ' + JSON.stringify(pend).slice(0, 200));
-    const restantes = await countPendentes(sb);
+    /* reivindica um lote de fotos pendentes (trava contra execuções
+       simultâneas: cron do banco + gatilho do app podem coincidir) */
+    const pend = await (await sb('/rest/v1/rpc/claim_fotos', {
+      method: 'POST', body: JSON.stringify({ lote: LOTE })
+    })).json();
+    if (!Array.isArray(pend)) throw new Error('claim_fotos falhou: ' + JSON.stringify(pend).slice(0, 200));
     if (pend.length === 0) return res.status(200).json({ processadas: 0, restantes: 0 });
 
     /* nomes de projetos e núcleos envolvidos */
@@ -45,6 +47,7 @@ export default async function handler(req, res) {
     const token = await googleToken(env);
     const folderCache = {};
     let processadas = 0;
+    const processadasIds = new Set();
 
     for (const foto of pend) {
       if (Date.now() - t0 > TEMPO_MAX_MS) break;
@@ -64,6 +67,12 @@ export default async function handler(req, res) {
         body: JSON.stringify({ mirrored_em: new Date().toISOString(), drive_file_id: fileId })
       });
       processadas++;
+      processadasIds.add(foto.id);
+    }
+    /* devolve à fila o que foi reivindicado mas não processado */
+    const sobras = pend.map(f => f.id).filter(id => !processadasIds.has(id));
+    if (sobras.length) {
+      await sb('/rest/v1/rpc/liberar_fotos', { method: 'POST', body: JSON.stringify({ ids: sobras }) });
     }
     const restam = await countPendentes(sb);
     return res.status(200).json({ processadas, restantes: restam });
