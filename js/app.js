@@ -242,26 +242,11 @@ document.addEventListener('syncchange', updateSyncCard);
 /* ---------- CENTRAL (dados de todos os aparelhos) ---------- */
 async function renderCentral() {
   document.body.classList.remove('report-mode');
-  const code = localStorage.getItem('diagcamelo-central-code');
-  if (!code) {
-    $('#view').innerHTML = `
-    <nav class="crumbs"><a href="#/">‹ Início</a></nav>
-    <div class="card">
-      <h2 style="margin-top:0">🌐 Central da equipe</h2>
-      <p class="muted">Aqui você vê tudo o que a equipe enviou, de todos os aparelhos. Digite o código da equipe para entrar.</p>
-      <label class="field"><span class="field-label">Código da equipe</span>
-        <input type="text" id="centralCode" autocomplete="off" placeholder="código combinado com a equipe">
-      </label>
-      <button class="btn primary" data-action="central-entrar">Entrar</button>
-    </div>`;
-    return;
-  }
   $('#view').innerHTML = '<nav class="crumbs"><a href="#/">‹ Início</a></nav><div class="card empty"><p>Consultando a central…</p></div>';
   let cloud;
   try {
-    cloud = await fetchPainel(code);
+    cloud = await fetchPainel(CONFIG.centralCode);
   } catch (e) {
-    if (String(e.message).includes('incorreto')) localStorage.removeItem('diagcamelo-central-code');
     $('#view').innerHTML = `<nav class="crumbs"><a href="#/">‹ Início</a></nav>
       <div class="card"><p>⚠ ${esc(e.message)}</p><a class="btn" href="#/central" onclick="setTimeout(route)">Tentar de novo</a></div>`;
     return;
@@ -294,8 +279,7 @@ async function renderCentral() {
   <nav class="crumbs"><a href="#/">‹ Início</a></nav>
   <div class="hero"><h1>🌐 Central da equipe</h1>
     <p>Tudo o que foi sincronizado por todos os aparelhos. Baixe um projeto para ver o conteúdo completo, editar e gerar o PDF.</p></div>
-  ${cards || '<div class="card empty"><p class="muted">Nada sincronizado ainda. Assim que a equipe enviar dados, eles aparecem aqui.</p></div>'}
-  <button class="btn danger-link" data-action="central-sair">Sair da central</button>`;
+  ${cards || '<div class="card empty"><p class="muted">Nada sincronizado ainda. Assim que a equipe enviar dados, eles aparecem aqui.</p></div>'}`;
 }
 
 function renderInstallButton() {
@@ -636,16 +620,6 @@ document.addEventListener('click', async e => {
   else if (action === 'sincronizar') {
     await flushSaves();
     syncNow(true).then(updateSyncCard);
-  }
-  else if (action === 'central-entrar') {
-    const code = ($('#centralCode').value || '').trim();
-    if (!code) { $('#centralCode').focus(); return; }
-    localStorage.setItem('diagcamelo-central-code', code);
-    renderCentral();
-  }
-  else if (action === 'central-sair') {
-    localStorage.removeItem('diagcamelo-central-code');
-    location.hash = '#/';
   }
   else if (action === 'central-baixar') {
     const pid = act.dataset.pid;
