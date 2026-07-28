@@ -1,5 +1,5 @@
 /* Diagnóstico Camelo — service worker (offline completo) */
-const CACHE = 'diagcamelo-v1';
+const CACHE = 'diagcamelo-v2';
 const ASSETS = [
   './',
   './index.html',
