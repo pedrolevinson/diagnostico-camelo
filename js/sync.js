@@ -128,6 +128,7 @@ async function syncNow(manual) {
     syncState.lastOk = Date.now();
     localStorage.setItem('diagcamelo-sync-last', String(syncState.lastOk));
     const total = dirtyP.length + dirtyN.length + fotosOk.length;
+    if (fotosOk.length) triggerDriveMirror();
     if (manual) toast('Sincronizado: ' + total + ' item(ns) enviados ✓');
     return { ok: true, enviados: total };
   } catch (e) {
@@ -143,6 +144,14 @@ async function syncNow(manual) {
 
 function _notifySync() {
   document.dispatchEvent(new CustomEvent('syncchange'));
+}
+
+/* avisa o robô do espelho no Drive (fire-and-forget; roda no servidor) */
+function triggerDriveMirror() {
+  try {
+    fetch('https://diagnostico-camelo.vercel.app/api/drive-mirror', { method: 'POST', mode: 'cors' })
+      .catch(() => { });
+  } catch (e) { }
 }
 
 /* dispara sozinho: ao abrir, ao voltar a internet e pouco depois de cada edição */
