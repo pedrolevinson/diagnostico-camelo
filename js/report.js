@@ -34,7 +34,8 @@ async function renderReport() {
   $('#view').innerHTML = `
   <div class="report-toolbar no-print">
     <a class="btn" href="#/p/${p.id}">‹ Voltar</a>
-    <button class="btn primary" data-action="imprimir">🖨️ Salvar como PDF</button>
+    <button class="btn primary" data-action="baixar-pdf">📄 Baixar PDF</button>
+    <button class="btn" data-action="imprimir">🖨️ Imprimir</button>
   </div>
 
   <article class="report">
@@ -119,9 +120,11 @@ function figuresHTML(photos, title) {
   let figs = '';
   for (const ph of photos) {
     _figCounter++;
+    const vid = isVideo(ph);
+    const link = vid && ph.driveFileId ? ` <a href="${driveLink(ph.driveFileId)}" target="_blank" rel="noopener">Assistir no Google Drive</a>` : '';
     figs += `<figure class="report-fig">
       <img src="${photoUrl(ph, 'full')}" alt="">
-      <figcaption>Figura ${_figCounter}${ph.caption ? ' — ' + esc(ph.caption) : ''}</figcaption>
+      <figcaption>Figura ${_figCounter}${vid ? ' (vídeo' + (ph.duration ? ', ' + fmtDuration(ph.duration) : '') + ')' : ''}${ph.caption ? ' — ' + esc(ph.caption) : ''}${link}</figcaption>
     </figure>`;
   }
   return `<div class="report-figs">${title ? `<h3>${esc(title)}</h3>` : ''}<div class="fig-grid">${figs}</div></div>`;

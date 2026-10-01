@@ -101,7 +101,8 @@ async function _loadBitmap(file) {
 }
 
 function _scaleToBlob(bitmap, maxSide, quality) {
-  const w0 = bitmap.width, h0 = bitmap.height;
+  const w0 = bitmap.videoWidth || bitmap.naturalWidth || bitmap.width;
+  const h0 = bitmap.videoHeight || bitmap.naturalHeight || bitmap.height;
   const scale = Math.min(1, maxSide / Math.max(w0, h0));
   const w = Math.max(1, Math.round(w0 * scale));
   const h = Math.max(1, Math.round(h0 * scale));
@@ -124,6 +125,83 @@ async function savePhoto(projectId, nucleoId, sectionId, itemId, file) {
   return photo;
 }
 
+/* ---------- Vídeos ----------
+   O arquivo original fica guardado no aparelho (sem recompressão) e sobe
+   direto para o Drive na sincronização. Do vídeo se extrai um quadro de
+   capa (JPEG), que serve de miniatura, de capa no PDF e na Central. */
+async function saveVideo(projectId, nucleoId, sectionId, itemId, file) {
+  const meta = await videoPoster(file);
+  const video = {
+    id: newId(), kind: 'video', projectId, nucleoId: nucleoId || '', section: sectionId || '',
+    item: itemId || '', blob: file, mime: file.type || 'video/mp4', size: file.size,
+    duration: meta.duration, poster: meta.poster, thumb: meta.thumb, w: meta.w, h: meta.h,
+    caption: '', ts: Date.now()
+  };
+  await dbPut('photos', video);
+  return video;
+}
+
+function videoPoster(file) {
+  return new Promise(resolve => {
+    const url = URL.createObjectURL(file);
+    const v = document.createElement('video');
+    let done = false;
+    const finish = async ok => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      let out;
+      try {
+        if (!ok || !v.videoWidth) throw new Error('sem quadro');
+        const full = await _scaleToBlob(v, 1280, 0.8);
+        const thumb = await _scaleToBlob(v, 320, 0.7);
+        out = { poster: full.blob, thumb: thumb.blob, w: full.w, h: full.h };
+      } catch (e) {
+        out = await _placeholderPoster();
+      }
+      out.duration = isFinite(v.duration) ? Math.round(v.duration) : null;
+      URL.revokeObjectURL(url);
+      resolve(out);
+    };
+    const timer = setTimeout(() => finish(v.readyState >= 2), 10000);
+    v.muted = true; v.playsInline = true; v.preload = 'auto';
+    v.setAttribute('playsinline', ''); v.setAttribute('muted', '');
+    v.addEventListener('loadeddata', () => {
+      const t = isFinite(v.duration) && v.duration > 0 ? Math.min(1, v.duration / 3) : 0;
+      if (t > 0) v.currentTime = t; else finish(true);
+    });
+    v.addEventListener('seeked', () => finish(true));
+    v.addEventListener('error', () => finish(false));
+    v.src = url;
+    v.load();
+  });
+}
+
+/* capa genérica quando o navegador não consegue decodificar o vídeo */
+async function _placeholderPoster() {
+  const c = document.createElement('canvas');
+  c.width = 640; c.height = 360;
+  const x = c.getContext('2d');
+  x.fillStyle = '#1d2b36'; x.fillRect(0, 0, 640, 360);
+  x.fillStyle = '#ffffff';
+  x.beginPath(); x.moveTo(280, 130); x.lineTo(280, 230); x.lineTo(370, 180); x.closePath(); x.fill();
+  x.font = '24px sans-serif'; x.textAlign = 'center'; x.fillText('Vídeo', 320, 290);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8));
+  return { poster: blob, thumb: blob, w: 640, h: 360 };
+}
+
+const isVideo = ph => ph && ph.kind === 'video';
+
+function fmtDuration(s) {
+  if (!s && s !== 0) return '';
+  const m = Math.floor(s / 60), r = Math.round(s % 60);
+  return m + ':' + String(r).padStart(2, '0');
+}
+
+function driveLink(fileId) {
+  return 'https://drive.google.com/file/d/' + fileId + '/view';
+}
+
 async function photosOf(nucleoId, projectId) {
   const list = nucleoId ? await dbByIndex('photos', 'byNucleo', nucleoId)
                         : (await dbByIndex('photos', 'byProject', projectId)).filter(p => !p.nucleoId);
@@ -131,6 +209,8 @@ async function photosOf(nucleoId, projectId) {
 }
 
 /* ---------- Backup (JSON com fotos em base64) ---------- */
+
+const VIDEO_BACKUP_MAX = 30 * 1024 * 1024;
 
 function blobToDataURL(blob) {
   return new Promise((resolve, reject) => {
@@ -152,11 +232,20 @@ async function exportProjectJSON(projectId) {
   const photos = await dbByIndex('photos', 'byProject', projectId);
   const photosOut = [];
   for (const p of photos) {
-    photosOut.push({
+    const out = {
       id: p.id, projectId: p.projectId, nucleoId: p.nucleoId, section: p.section,
-      item: p.item, caption: p.caption, ts: p.ts, w: p.w, h: p.h,
-      dataUrl: await blobToDataURL(p.blob)
-    });
+      item: p.item, caption: p.caption, ts: p.ts, w: p.w, h: p.h
+    };
+    if (isVideo(p)) {
+      /* vídeo grande não cabe num backup de WhatsApp: vai a capa, e o
+         arquivo só se for pequeno (o original sobe pela nuvem) */
+      Object.assign(out, { kind: 'video', mime: p.mime, size: p.size, duration: p.duration, driveFileId: p.driveFileId || '' });
+      out.posterUrl = await blobToDataURL(p.poster || p.thumb);
+      if (p.blob && p.size <= VIDEO_BACKUP_MAX) out.dataUrl = await blobToDataURL(p.blob);
+    } else {
+      out.dataUrl = await blobToDataURL(p.blob);
+    }
+    photosOut.push(out);
   }
   return {
     formato: 'diagcamelo-backup', versao: 1, appVersion: APP_VERSION,
@@ -184,6 +273,20 @@ async function importProjectJSON(payload) {
     const cur = await dbGet('photos', p.id);
     if (cur) { /* já existe; só atualiza legenda se veio preenchida */
       if (p.caption && p.caption !== cur.caption) { cur.caption = p.caption; await dbPut('photos', cur); }
+      continue;
+    }
+    if (p.kind === 'video') {
+      const poster = await dataURLtoBlob(p.posterUrl);
+      await dbPut('photos', {
+        id: p.id, kind: 'video', projectId: p.projectId, nucleoId: p.nucleoId || '', section: p.section || '',
+        item: p.item || '', blob: p.dataUrl ? await dataURLtoBlob(p.dataUrl) : null, poster, thumb: poster,
+        mime: p.mime, size: p.size, duration: p.duration, driveFileId: p.driveFileId || '',
+        w: p.w, h: p.h, caption: p.caption || '', ts: p.ts || Date.now(),
+        /* já está no Drive, ou o backup não trouxe o arquivo: nada a subir.
+           Se trouxe o arquivo e ele nunca subiu, este aparelho envia. */
+        syncEm: (p.dataUrl && !p.driveFileId) ? undefined : (p.ts || Date.now())
+      });
+      fotosNovas++;
       continue;
     }
     const blob = await dataURLtoBlob(p.dataUrl);

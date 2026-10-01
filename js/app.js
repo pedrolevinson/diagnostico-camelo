@@ -105,9 +105,13 @@ function touchNucleo() {
 
 /* ---------- fotos: object URLs ---------- */
 function photoUrl(photo, kind) {
-  const key = photo.id + (kind === 'full' ? ':full' : ':thumb');
+  const key = photo.id + ':' + (kind || 'thumb');
   if (state.photoUrls.has(key)) return state.photoUrls.get(key);
-  const url = URL.createObjectURL(kind === 'full' ? photo.blob : (photo.thumb || photo.blob));
+  let src;
+  if (kind === 'video') src = photo.blob;
+  else if (isVideo(photo)) src = kind === 'full' ? (photo.poster || photo.thumb) : (photo.thumb || photo.poster);
+  else src = kind === 'full' ? photo.blob : (photo.thumb || photo.blob);
+  const url = URL.createObjectURL(src);
   state.photoUrls.set(key, url);
   return url;
 }
@@ -120,7 +124,15 @@ function clearPhotoUrls() {
 /* ---------- roteamento ---------- */
 window.addEventListener('hashchange', route);
 
-async function route() {
+/* uma tela de cada vez: dois toques rápidos não deixam a tela antiga
+   terminar de desenhar por cima da nova */
+let _routing = Promise.resolve();
+function route() {
+  _routing = _routing.then(_route, _route);
+  return _routing;
+}
+
+async function _route() {
   await flushSaves();
   clearPhotoUrls();
   closeModal();
@@ -217,7 +229,7 @@ async function updateSyncCard() {
   const el = $('#syncCard');
   if (!el) return;
   let status;
-  if (syncState.running) status = '<span class="muted">☁️ Enviando…</span>';
+  if (syncState.running) status = '<span class="muted">☁️ ' + esc(syncState.progress || 'Enviando…') + '</span>';
   else if (!navigator.onLine) status = '<span class="muted">📴 Sem internet, dados guardados no aparelho</span>';
   else if (syncState.lastError) status = '<span class="sync-err">⚠ ' + esc(syncState.lastError) + '</span>';
   else if (syncState.lastOk) status = '<span class="sync-ok">✓ Última sincronização: ' + fmtDate(syncState.lastOk) + '</span>';
@@ -225,8 +237,12 @@ async function updateSyncCard() {
   let pend = '';
   try {
     const c = await pendingCounts();
-    const total = c.projects + c.nucleos + c.photos;
-    pend = total ? `<span class="badge">${total} item(ns) a enviar</span>` : '<span class="badge light">nada pendente</span>';
+    const total = c.projects + c.nucleos + c.photos + c.videos;
+    const partes = [];
+    if (c.projects + c.nucleos) partes.push((c.projects + c.nucleos) + ' texto(s)');
+    if (c.photos) partes.push(c.photos + ' foto(s)');
+    if (c.videos) partes.push(c.videos + ' vídeo(s)');
+    pend = total ? `<span class="badge warn">${partes.join(' · ')} a enviar</span>` : '<span class="badge light">✓ tudo na nuvem</span>';
   } catch (e) { }
   el.innerHTML = `
     <div class="project-card-top"><h3>☁️ Nuvem da equipe</h3>${pend}</div>
@@ -256,8 +272,10 @@ async function renderCentral() {
   for (const p of cloud.projects) {
     const nucleos = cloud.nucleos.filter(n => n.project_id === p.id);
     const fotos = cloud.photos.filter(f => f.project_id === p.id);
-    const thumbs = fotos.slice(0, 8).map(f =>
-      `<figure class="thumb"><img loading="lazy" src="${publicPhotoUrl(f.storage_path)}" alt=""></figure>`).join('');
+    const thumbs = fotos.slice(0, 8).map(f => f.kind === 'video' && f.drive_file_id
+      ? `<a class="thumb is-video" href="${driveLink(f.drive_file_id)}" target="_blank" rel="noopener"><img loading="lazy" src="${publicPhotoUrl(f.storage_path)}" alt=""><span class="play-badge">▶ ${fmtDuration(f.duration)}</span></a>`
+      : `<figure class="thumb"><img loading="lazy" src="${publicPhotoUrl(f.storage_path)}" alt=""></figure>`).join('');
+    const nVideos = fotos.filter(f => f.kind === 'video').length;
     const nucleoLines = nucleos.map(n => {
       const s2 = (n.dados || {}).s2 || {};
       const extra = [s2.moradores ? s2.moradores + ' moradores' : '', s2.frequentadores ? s2.frequentadores + ' na EAS' : '']
@@ -269,7 +287,7 @@ async function renderCentral() {
       <div class="project-card-top"><h3>${esc(p.nome)}</h3>
         <span class="badge light">${esc((p.device || '') + (p.sync_em ? ' · ' + fmtDate(Date.parse(p.sync_em)) : ''))}</span></div>
       <p class="muted small">${esc((p.dados || {}).cliente || '')}${(p.dados || {}).local ? ' · ' + esc(p.dados.local) : ''}</p>
-      <div class="badges"><span class="badge">${nucleos.length} núcleo(s)</span><span class="badge">${fotos.length} foto(s)</span></div>
+      <div class="badges"><span class="badge">${nucleos.length} núcleo(s)</span><span class="badge">${fotos.length - nVideos} foto(s)</span>${nVideos ? `<span class="badge">${nVideos} vídeo(s)</span>` : ''}</div>
       ${nucleoLines ? `<ul class="central-nucleos">${nucleoLines}</ul>` : ''}
       ${thumbs ? `<div class="thumbs">${thumbs}</div>` : ''}
       <button class="btn small" data-action="central-baixar" data-pid="${p.id}">📥 Baixar para este aparelho</button>
@@ -278,7 +296,7 @@ async function renderCentral() {
   $('#view').innerHTML = `
   <nav class="crumbs"><a href="#/">‹ Início</a></nav>
   <div class="hero"><h1>🌐 Central da equipe</h1>
-    <p>Tudo o que foi sincronizado por todos os aparelhos. Baixe um projeto para ver o conteúdo completo, editar e gerar o PDF.</p></div>
+    <p>Tudo o que foi sincronizado por todos os aparelhos. Baixe um projeto para ver o conteúdo completo, editar e gerar o PDF. Os vídeos ficam no Google Drive, na pasta “Diagnósticos de Campo”.</p></div>
   ${cards || '<div class="card empty"><p class="muted">Nada sincronizado ainda. Assim que a equipe enviar dados, eles aparecem aqui.</p></div>'}`;
 }
 
@@ -451,21 +469,25 @@ function fieldHTML(f, val, ctx) {
 
 function photoZoneHTML(sectionId, itemId, photos, title) {
   let thumbs = '';
-  for (const ph of photos) {
-    thumbs += `<figure class="thumb" data-action="ver-foto" data-photo="${ph.id}">
-      <img src="${photoUrl(ph, 'thumb')}" alt="">
-      ${ph.caption ? `<figcaption>${esc(ph.caption)}</figcaption>` : ''}
-    </figure>`;
-  }
+  for (const ph of photos) thumbs += thumbHTML(ph);
   return `
   <div class="photozone" data-psec="${sectionId}" data-pitem="${itemId || ''}">
     <span class="field-label">${esc(title || 'Fotos')} <span class="muted">(${photos.length})</span></span>
     <div class="thumbs">${thumbs}</div>
     <div class="row gap">
-      <label class="btn small">📷 Tirar foto<input type="file" accept="image/*" capture="environment" data-photoinput hidden></label>
-      <label class="btn small">🖼️ Galeria<input type="file" accept="image/*" multiple data-photoinput hidden></label>
+      <label class="btn small">📷 Foto<input type="file" accept="image/*" capture="environment" data-photoinput hidden></label>
+      <label class="btn small">🎥 Vídeo<input type="file" accept="video/*" capture="environment" data-photoinput hidden></label>
+      <label class="btn small">🖼️ Galeria<input type="file" accept="image/*,video/*" multiple data-photoinput hidden></label>
     </div>
   </div>`;
+}
+
+function thumbHTML(ph) {
+  return `<figure class="thumb${isVideo(ph) ? ' is-video' : ''}" data-action="ver-foto" data-photo="${ph.id}">
+      <img src="${photoUrl(ph, 'thumb')}" alt="">
+      ${isVideo(ph) ? `<span class="play-badge">▶ ${fmtDuration(ph.duration)}</span>` : ''}
+      ${ph.caption ? `<figcaption>${esc(ph.caption)}</figcaption>` : ''}
+    </figure>`;
 }
 
 /* ---------- escrita no modelo ---------- */
@@ -682,6 +704,23 @@ document.addEventListener('click', async e => {
   else if (action === 'imprimir') {
     window.print();
   }
+  else if (action === 'baixar-pdf') {
+    act.disabled = true;
+    const txt = act.textContent;
+    act.textContent = '⏳ Gerando PDF…';
+    try {
+      await flushSaves();
+      const { blob, name } = await buildReportPDF(state.project.id, (i, n) => { act.textContent = `⏳ Gerando PDF (${i}/${n})…`; });
+      const como = await deliverFile(blob, name, 'Relatório de diagnóstico');
+      if (como) toast('PDF gerado: ' + name, 4000);
+    } catch (e) {
+      console.error(e);
+      toast('Erro ao gerar PDF: ' + e.message, 5000);
+    } finally {
+      act.disabled = false;
+      act.textContent = txt;
+    }
+  }
 });
 
 document.addEventListener('change', async e => {
@@ -691,29 +730,29 @@ document.addEventListener('change', async e => {
     const files = Array.from(el.files || []);
     el.value = '';
     if (!files.length) return;
-    toast(`Processando ${files.length} foto${files.length > 1 ? 's' : ''}…`);
+    toast(`Processando ${files.length} arquivo${files.length > 1 ? 's' : ''}…`);
     const secId = zone.dataset.psec;
     const itemId = zone.dataset.pitem;
     const nucleoId = state.nucleo ? state.nucleo.id : '';
     try {
+      let videos = 0;
       for (const file of files) {
-        const ph = await savePhoto(state.project.id, nucleoId, secId, itemId, file);
+        const ehVideo = (file.type || '').startsWith('video/') || /\.(mp4|mov|m4v|3gp|webm)$/i.test(file.name || '');
+        const ph = ehVideo ? await saveVideo(state.project.id, nucleoId, secId, itemId, file)
+                           : await savePhoto(state.project.id, nucleoId, secId, itemId, file);
+        if (ehVideo) videos++;
         if (state._nucleoPhotos) state._nucleoPhotos.push(ph);
-        const fig = document.createElement('figure');
-        fig.className = 'thumb';
-        fig.dataset.action = 'ver-foto';
-        fig.dataset.photo = ph.id;
-        fig.innerHTML = `<img src="${photoUrl(ph, 'thumb')}" alt="">`;
-        zone.querySelector('.thumbs').appendChild(fig);
+        zone.querySelector('.thumbs').insertAdjacentHTML('beforeend', thumbHTML(ph));
       }
+      requestPersistentStorage();
       const label = zone.querySelector('.field-label .muted');
       if (label) label.textContent = '(' + zone.querySelectorAll('.thumb').length + ')';
       if (secId && secId !== 'projeto') updateSectionCheck(secId);
       touchNucleo();
-      toast('Foto(s) salva(s) ✓');
+      toast(videos ? 'Salvo no aparelho ✓ (vídeo sobe para o Drive quando houver internet)' : 'Foto(s) salva(s) ✓', 3500);
     } catch (err) {
       console.error(err);
-      toast('Erro ao salvar foto: ' + err.message);
+      toast('Erro ao salvar: ' + err.message + (/quota/i.test(err.message) ? ' (aparelho sem espaço)' : ''), 5000);
     }
     return;
   }
@@ -810,15 +849,26 @@ function promptModal(title, label, placeholder, onOk) {
 async function openPhotoModal(photoId) {
   const ph = await dbGet('photos', photoId);
   if (!ph) return;
-  const url = photoUrl(ph, 'full');
+  let media;
+  if (isVideo(ph) && ph.blob) {
+    media = `<video src="${photoUrl(ph, 'video')}" poster="${photoUrl(ph, 'full')}" controls playsinline preload="metadata"></video>`;
+  } else if (isVideo(ph)) {
+    media = `<img src="${photoUrl(ph, 'full')}" alt="">` + (ph.driveFileId
+      ? `<p class="small center"><a href="${driveLink(ph.driveFileId)}" target="_blank" rel="noopener">▶ Assistir no Google Drive</a></p>`
+      : '<p class="muted small center">O arquivo deste vídeo está no aparelho que gravou.</p>');
+  } else {
+    media = `<img src="${photoUrl(ph, 'full')}" alt="">`;
+  }
+  const info = isVideo(ph) ? `<p class="muted small">🎥 Vídeo ${fmtDuration(ph.duration)}${ph.size ? ' · ' + (ph.size / 1048576).toFixed(1) + ' MB' : ''}${ph.driveFileId ? ' · ✓ no Drive' : ' · ainda não enviado'}</p>` : '';
   openModal(`
     <div class="photo-view">
-      <img src="${url}" alt="">
+      ${media}
+      ${info}
       <label class="field"><span class="field-label">Legenda</span>
         <input type="text" id="captionInput" value="${esc(ph.caption)}" placeholder="Ex.: Cacimba da casa do seu Maneco">
       </label>
       <div class="row gap right">
-        <button class="btn danger-link" id="delPhoto">🗑 Apagar foto</button>
+        <button class="btn danger-link" id="delPhoto">🗑 Apagar ${isVideo(ph) ? 'vídeo' : 'foto'}</button>
         <button class="btn primary" data-action="fechar-modal">Fechar</button>
       </div>
     </div>`);
@@ -847,7 +897,7 @@ async function openPhotoModal(photoId) {
     if (fig) fig.remove();
     if (ph.section && ph.section !== 'projeto') updateSectionCheck(ph.section);
     closeModal();
-    toast('Foto apagada.');
+    toast(isVideo(ph) ? 'Vídeo apagado.' : 'Foto apagada.');
   });
 }
 
@@ -858,10 +908,13 @@ function helpModal() {
       <li><strong>Instale no celular:</strong> abra este site com internet uma vez e use “Adicionar à tela inicial”. Depois disso, funciona 100% offline (MRN, Angola, qualquer lugar).</li>
       <li><strong>Crie um projeto</strong> para cada diagnóstico (ex.: MRN, Pumangol) e <strong>um núcleo</strong> para cada vila/cidade.</li>
       <li><strong>Preencha as seções</strong> tocando nelas. Tudo salva sozinho a cada toque, pode fechar e voltar depois.</li>
-      <li><strong>Fotos:</strong> em cada seção, use “Tirar foto” (câmera) ou “Galeria”. Toque na foto para dar legenda ou apagar.</li>
+      <li><strong>Fotos e vídeos:</strong> em cada seção, use “Foto”, “Vídeo” ou “Galeria”. Toque na miniatura para dar legenda, assistir ou apagar. Prefira vídeos curtos (até 1 ou 2 minutos): ficam guardados no aparelho e sobem para o Drive quando houver internet.</li>
+      <li><strong>Sem sinal:</strong> pode trabalhar normalmente. O cartão “Nuvem da equipe” mostra o que falta enviar; quando o sinal voltar, envia sozinho (e retoma vídeo pela metade).</li>
+      <li><strong>iPhone:</strong> use sempre pelo ícone da tela inicial. O Safari e o ícone guardam dados separados.</li>
       <li><strong>GPS:</strong> o botão “Capturar” pega as coordenadas mesmo sem internet (o GPS do celular não precisa de sinal).</li>
-      <li><strong>Ao voltar do campo:</strong> no projeto, toque em “Backup (.json)” e envie o arquivo (WhatsApp, e-mail, Drive). Quem receber importa em “Importar backup” e vê tudo, incluindo fotos.</li>
-      <li><strong>PDF:</strong> “Relatório (PDF)” gera o documento completo com fotos e notas; toque em “Salvar como PDF”.</li>
+      <li><strong>No Brasil:</strong> tudo que sincronizou aparece na “Central da equipe”, em qualquer aparelho. As fotos e os vídeos também ficam no Google Drive, pasta “Diagnósticos de Campo”.</li>
+      <li><strong>Sem nuvem nenhuma:</strong> no projeto, “Backup (.json)” gera um arquivo para mandar por WhatsApp ou e-mail; quem recebe usa “Importar backup”. Vídeos grandes não entram no backup, só pela nuvem.</li>
+      <li><strong>PDF:</strong> “Relatório (PDF)” → “Baixar PDF” gera o arquivo completo com fotos, capas dos vídeos e notas, mesmo offline.</li>
     </ol>
     <p class="muted small">Os dados ficam salvos neste aparelho. Backup regularmente para não depender de um único celular.</p>
     <div class="row right"><button class="btn primary" data-action="fechar-modal">Entendi</button></div>`);
@@ -875,17 +928,37 @@ async function exportBackup() {
     const payload = await exportProjectJSON(state.project.id);
     const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
     const name = 'diagnostico-' + slug(state.project.nome) + '-' + new Date().toISOString().slice(0, 10) + '.json';
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
-    toast('Backup gerado: ' + name, 4000);
+    const como = await deliverFile(blob, name, 'Backup do diagnóstico');
+    if (como) toast('Backup gerado: ' + name, 4000);
   } catch (e) {
     console.error(e);
     alert('Erro ao gerar backup: ' + e.message);
   }
+}
+
+/* entrega um arquivo gerado: no celular abre o "Compartilhar" (salvar em
+   Arquivos, WhatsApp, e-mail); no computador baixa direto */
+async function deliverFile(blob, name, title) {
+  const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (mobile && navigator.canShare) {
+    const file = new File([blob], name, { type: blob.type });
+    if (navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title });
+        return 'share';
+      } catch (e) {
+        if (e.name === 'AbortError') return null;
+      }
+    }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 60000);
+  return 'download';
 }
 
 /* ---------- service worker / inicialização ---------- */
@@ -904,4 +977,5 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+requestPersistentStorage();
 route();

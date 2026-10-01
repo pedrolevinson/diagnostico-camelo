@@ -7,7 +7,7 @@
    Camelo (MRN Ajudante 2026, Axia TI Trocará, Boa Esperança).
    ========================================================= */
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.4.0';
 
 /* Campos do projeto (nível superior) */
 const PROJECT_FIELDS = [
