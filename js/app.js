@@ -911,6 +911,7 @@ function helpModal() {
       <li><strong>Fotos e vídeos:</strong> em cada seção, use “Foto”, “Vídeo” ou “Galeria”. Toque na miniatura para dar legenda, assistir ou apagar. Prefira vídeos curtos (até 1 ou 2 minutos): ficam guardados no aparelho e sobem para o Drive quando houver internet.</li>
       <li><strong>Sem sinal:</strong> pode trabalhar normalmente. O cartão “Nuvem da equipe” mostra o que falta enviar; quando o sinal voltar, envia sozinho (e retoma vídeo pela metade).</li>
       <li><strong>iPhone:</strong> use sempre pelo ícone da tela inicial. O Safari e o ícone guardam dados separados.</li>
+      <li><strong>Antes de gravar vídeo no iPhone:</strong> em Ajustes → Câmera → Formatos, escolha “Mais Compatível”; e em Ajustes → Câmera → Gravar Vídeo, escolha “1080p a 30 qps”. Assim o vídeo toca direto no Google Drive e em qualquer computador, e fica bem menor para enviar pelo 4G.</li>
       <li><strong>GPS:</strong> o botão “Capturar” pega as coordenadas mesmo sem internet (o GPS do celular não precisa de sinal).</li>
       <li><strong>No Brasil:</strong> tudo que sincronizou aparece na “Central da equipe”, em qualquer aparelho. As fotos e os vídeos também ficam no Google Drive, pasta “Diagnósticos de Campo”.</li>
       <li><strong>Sem nuvem nenhuma:</strong> no projeto, “Backup (.json)” gera um arquivo para mandar por WhatsApp ou e-mail; quem recebe usa “Importar backup”. Vídeos grandes não entram no backup, só pela nuvem.</li>
