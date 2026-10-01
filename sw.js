@@ -1,5 +1,5 @@
 /* Diagnóstico Camelo — service worker (offline completo) */
-const CACHE = 'diagcamelo-v6';
+const CACHE = 'diagcamelo-v7';
 const ASSETS = [
   './',
   './index.html',
@@ -9,6 +9,8 @@ const ASSETS = [
   './js/config.js',
   './js/sync.js',
   './js/report.js',
+  './js/vendor/jspdf.umd.min.js',
+  './js/pdf.js',
   './js/app.js',
   './manifest.webmanifest',
   './icons/icon-192.png',

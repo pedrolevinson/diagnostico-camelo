@@ -6,9 +6,10 @@ Plataforma de diagnóstico de campo da Água Camelo. Organiza as informações c
 
 - **Funciona 100% offline** (PWA): depois do primeiro acesso com internet, o app abre e funciona sem sinal, em qualquer lugar do mundo. Instale pela opção "Adicionar à tela inicial" do navegador.
 - **Salvamento automático**: cada toque é gravado no aparelho (IndexedDB). Pode fechar a aba e voltar depois.
-- **Fotos**: captura pela câmera ou upload da galeria, com legenda, comprimidas automaticamente (máx. 1600 px).
+- **Fotos e vídeos**: câmera ou galeria, com legenda. Fotos comprimidas (máx. 1600 px); vídeos guardados no original, com capa extraída para miniatura e PDF.
+- **Sincronização**: textos sobem primeiro, depois cada foto e cada vídeo, um a um, com tempo limite e nova tentativa a cada minuto. Vídeo vai direto do aparelho para o Google Drive em pedaços de 2 MB (`api/video-upload` abre a sessão) e retoma de onde parou se o sinal cair. Fotos vão para o Supabase e são espelhadas no Drive (`api/drive-mirror`, chamada pelo app e por cron de 5 min no banco).
 - **GPS**: captura de coordenadas mesmo sem internet (o GPS do celular não depende de sinal).
-- **Relatório em PDF**: botão "Relatório (PDF)" gera o documento completo (campos, notas e fotos numeradas) para salvar via impressão nativa do navegador.
+- **Relatório em PDF**: "Relatório (PDF)" → "Baixar PDF" gera o arquivo no próprio aparelho com jsPDF (em `js/vendor`, funciona offline): campos, notas, fotos numeradas, capas dos vídeos com link do Drive. No celular abre o Compartilhar (o `window.print()` falha no iPhone com o app instalado); "Imprimir" segue disponível.
 - **Backup (.json)**: exporta o projeto inteiro (incluindo fotos) em um arquivo para enviar por WhatsApp/e-mail/Drive; quem recebe usa "Importar backup" e vê tudo.
 
 ## Estrutura do formulário
@@ -31,7 +32,9 @@ Para acrescentar/alterar perguntas, edite apenas `js/schema.js` — a interface,
 - HTML/CSS/JS puro, sem build e sem dependências externas (essencial para o offline).
 - `js/db.js` — persistência local (IndexedDB) + backup/import.
 - `js/app.js` — rotas, renderização, auto-save, fotos, GPS.
-- `js/report.js` — relatório imprimível.
+- `js/report.js` — relatório na tela (e impressão).
+- `js/pdf.js` — PDF gerado no aparelho.
+- `api/` — funções da Vercel: `drive-mirror`, `video-upload`, `apagar`.
 - `sw.js` — service worker (cache do shell para offline).
 
 ## Testes
