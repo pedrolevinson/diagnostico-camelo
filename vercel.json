@@ -1,5 +1,10 @@
 {
   "functions": {
-    "api/drive-mirror.js": { "maxDuration": 60 }
+    "api/drive-mirror.js": {
+      "maxDuration": 60
+    },
+    "api/video-upload.js": {
+      "maxDuration": 30
+    }
   }
 }
