@@ -183,33 +183,34 @@ async function buildReportPDF(projectId, onProgress) {
   doc.text(doc.splitTextToSize(pdfText(p.nome), PDF.CW), PDF.M, 37);
   doc.setTextColor(90, 90, 90); doc.setFontSize(9.5);
   y = 56;
-  doc.text(pdfText('Gerado em ' + hoje + ' · ' + nucleos.length + ' núcleo(s) · ' +
+  const sc = scopeOf(p);
+  doc.text(pdfText('Gerado em ' + hoje + ' · ' + sc.aba + ' · ' + nucleos.length + ' ' + sc.unidades + ' · ' +
     all.filter(x => !isVideo(x)).length + ' foto(s) · ' + all.filter(isVideo).length + ' vídeo(s)'), PDF.M, y);
   y += 8;
 
-  const info = PROJECT_FIELDS.filter(f => isFilled(p[f.key])).map(f => [f.label, p[f.key]]);
+  const info = sc.projectFields.filter(f => isFilled(p[f.key])).map(f => [f.label, p[f.key]]);
   if (info.length) { heading('Informações do projeto', 13, true); kvTable(info); }
 
   const fotosProjeto = all.filter(ph => !ph.nucleoId);
   if (fotosProjeto.length) { heading('Registro fotográfico geral', 13, true); await figures(fotosProjeto); }
 
   if (nucleos.length) {
-    heading('Núcleos visitados', 13, true);
-    gridTable(['Núcleo', 'Moradores', 'Frequentadores da EAS', 'Fontes de água'], nucleos.map(n => {
-      const s2 = (n.dados || {}).s2 || {};
-      const fontes = (((n.dados || {}).s3 || {}).fontes || []).length;
-      return [n.nome, s2.moradores || '-', s2.frequentadores || '-', fontes ? String(fontes) : '-'];
-    }), [70, 32, 46, 30]);
+    heading(sc.visitados, 13, true);
+    gridTable([sc.Unidade].concat(sc.resumo.map(c => c.label)), nucleos.map(n =>
+      [n.nome].concat(sc.resumo.map(c => { const v = c.get(n.dados || {}); return isFilled(v) ? String(v) : '-'; }))
+    ), [70, 32, 46, 30]);
   }
 
   for (const n of nucleos) {
     doc.addPage(); y = PDF.M;
     doc.setFillColor(10, 10, 10); doc.rect(PDF.M, y, PDF.CW, 11, 'F');
     doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
-    doc.text(pdfText('Núcleo: ' + n.nome), PDF.M + 3, y + 7.5);
+    doc.text(pdfText(sc.Unidade + ': ' + n.nome), PDF.M + 3, y + 7.5);
     y += 16;
+    const alertas = alertasDe(n.dados, sc.sections);
+    if (alertas.length) { heading('Pontos de atenção', 12, true); kvTable(alertas.map((a, i) => ['Atenção ' + (i + 1), a])); }
     const photos = all.filter(ph => ph.nucleoId === n.id);
-    for (const sec of SECTIONS) {
+    for (const sec of sc.sections) {
       const secPhotos = photos.filter(ph => ph.section === sec.id);
       if (!sectionHasData(sec, n.dados) && !secPhotos.length) continue;
       heading(sec.title, 12, true);

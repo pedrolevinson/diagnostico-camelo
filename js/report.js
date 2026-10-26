@@ -17,16 +17,17 @@ async function renderReport() {
   const nucleos = (await dbByIndex('nucleos', 'byProject', p.id)).sort((a, b) => (a.criadoEm || 0) - (b.criadoEm || 0));
   const allPhotos = (await dbByIndex('photos', 'byProject', p.id)).sort((a, b) => a.ts - b.ts);
   const projectPhotos = allPhotos.filter(ph => !ph.nucleoId);
+  const sc = scopeOf(p);
 
-  let infoRows = '';
-  for (const f of PROJECT_FIELDS) {
+  let infoRows = `<tr><th>Escopo do diagnóstico</th><td>${esc(sc.aba)}</td></tr>`;
+  for (const f of sc.projectFields) {
     if (!isFilled(p[f.key])) continue;
     infoRows += `<tr><th>${esc(f.label)}</th><td>${esc(p[f.key])}</td></tr>`;
   }
 
   let nucleosHtml = '';
   for (const n of nucleos) {
-    nucleosHtml += nucleoReportHTML(n, allPhotos.filter(ph => ph.nucleoId === n.id));
+    nucleosHtml += nucleoReportHTML(n, allPhotos.filter(ph => ph.nucleoId === n.id), sc);
   }
 
   const hoje = new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -54,16 +55,12 @@ async function renderReport() {
     ${figuresHTML(projectPhotos, 'Registro fotográfico geral')}
 
     ${nucleos.length ? `<section class="report-block">
-      <h3>Núcleos visitados</h3>
+      <h3>${esc(sc.visitados)}</h3>
       <table class="report-table">
-        <tr><th>Núcleo</th><th>Moradores</th><th>Frequentadores da EAS</th><th>Fontes de água</th></tr>
-        ${nucleos.map(n => {
-          const s2 = (n.dados || {}).s2 || {};
-          const fontes = (((n.dados || {}).s3 || {}).fontes || []).length;
-          return `<tr><td>${esc(n.nome)}</td><td>${esc(s2.moradores || '—')}</td><td>${esc(s2.frequentadores || '—')}</td><td>${fontes || '—'}</td></tr>`;
-        }).join('')}
+        <tr><th>${esc(sc.Unidade)}</th>${sc.resumo.map(c => `<th>${esc(c.label)}</th>`).join('')}</tr>
+        ${nucleos.map(n => `<tr><td>${esc(n.nome)}</td>${sc.resumo.map(c => { const v = c.get(n.dados || {}); return `<td>${esc(isFilled(v) ? v : '—')}</td>`; }).join('')}</tr>`).join('')}
       </table>
-    </section>` : '<p class="muted">Nenhum núcleo cadastrado.</p>'}
+    </section>` : `<p class="muted">${esc(sc.nenhum)}</p>`}
 
     ${nucleosHtml}
 
@@ -73,9 +70,11 @@ async function renderReport() {
   </article>`;
 }
 
-function nucleoReportHTML(n, photos) {
-  let html = `<section class="report-nucleo"><h2 class="nucleo-title">Núcleo: ${esc(n.nome)}</h2>`;
-  for (const sec of SECTIONS) {
+function nucleoReportHTML(n, photos, sc) {
+  let html = `<section class="report-nucleo"><h2 class="nucleo-title">${esc(sc.Unidade)}: ${esc(n.nome)}</h2>`;
+  const alertas = alertasDe(n.dados, sc.sections);
+  if (alertas.length) html += `<div class="report-block alertas"><strong>⚠ Pontos de atenção</strong><ul>${alertas.map(a => `<li>${esc(a)}</li>`).join('')}</ul></div>`;
+  for (const sec of sc.sections) {
     const secPhotos = photos.filter(ph => ph.section === sec.id);
     if (!sectionHasData(sec, n.dados) && secPhotos.length === 0) continue;
     html += `<div class="report-block"><h3>${sec.emoji} ${esc(sec.title)}</h3>`;

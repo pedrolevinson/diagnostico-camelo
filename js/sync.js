@@ -222,8 +222,8 @@ async function syncNow(manual) {
       syncState.progress = 'Enviando textos…'; _notifySync();
       await _rpcSync({
         projects: dirtyP.map(p => {
-          const dados = {};
-          PROJECT_FIELDS.forEach(f => { if (isFilled(p[f.key])) dados[f.key] = p[f.key]; });
+          const dados = { escopo: scopeOf(p).id };
+          scopeOf(p).projectFields.forEach(f => { if (isFilled(p[f.key])) dados[f.key] = p[f.key]; });
           return { id: p.id, nome: p.nome || '', dados, criado_em: isoOrNull(p.criadoEm), atualizado_em: isoOrNull(p.atualizadoEm), device };
         }),
         nucleos: dirtyN.map(n => ({
