@@ -24,8 +24,18 @@ const state = {
   photoUrls: new Map(), // photoId -> objectURL (miniatura)
   pendingSaves: new Map(), // chave -> fn de gravação
   saveTimer: null,
-  deferredInstall: null
+  deferredInstall: null,
+  homeTab: lerAba()      // 'comunidade' | 'escola'
 };
+
+/* aba escolhida fica lembrada neste aparelho */
+function lerAba() {
+  try { const v = localStorage.getItem('diagcamelo-aba'); return SCOPES[v] ? v : 'comunidade'; } catch (e) { return 'comunidade'; }
+}
+function setAba(v) {
+  state.homeTab = SCOPES[v] ? v : 'comunidade';
+  try { localStorage.setItem('diagcamelo-aba', state.homeTab); } catch (e) { }
+}
 
 /* ---------- util ---------- */
 function toast(msg, ms) {
@@ -144,6 +154,7 @@ async function _route() {
       const project = await dbGet('projects', parts[1]);
       if (!project) { location.hash = '#/'; return; }
       state.project = project;
+      setAba(scopeOf(project).id);
       if (parts[2] === 'n' && parts[3]) {
         const nucleo = await dbGet('nucleos', parts[3]);
         if (!nucleo) { location.hash = '#/p/' + project.id; return; }
@@ -176,7 +187,9 @@ async function _route() {
 /* ---------- HOME ---------- */
 async function renderHome() {
   document.body.classList.remove('report-mode');
-  const projects = (await dbAll('projects')).sort((a, b) => (b.atualizadoEm || 0) - (a.atualizadoEm || 0));
+  const todos = (await dbAll('projects')).sort((a, b) => (b.atualizadoEm || 0) - (a.atualizadoEm || 0));
+  const sc = SCOPES[state.homeTab];
+  const projects = todos.filter(p => scopeOf(p).id === sc.id);
   const nucleos = await dbAll('nucleos');
   const countByProject = {};
   nucleos.forEach(n => { countByProject[n.projectId] = (countByProject[n.projectId] || 0) + 1; });
@@ -192,7 +205,7 @@ async function renderHome() {
       </div>
       <p class="muted">${esc(p.cliente || 'Sem cliente definido')}${p.local ? ' · ' + esc(p.local) : ''}</p>
       <div class="badges">
-        <span class="badge">${nCount} núcleo${nCount === 1 ? '' : 's'}</span>
+        <span class="badge">${nCount} ${nCount === 1 ? sc.unidade : sc.unidades}</span>
         <span class="badge light">Atualizado ${fmtDate(p.atualizadoEm)}</span>
       </div>
     </a>`;
@@ -204,14 +217,20 @@ async function renderHome() {
   $('#view').innerHTML = `
   <div class="hero">
     <h1>Diagnósticos de campo</h1>
-    <p>Crie um projeto por diagnóstico (ex.: MRN, Angola) e um núcleo para cada vila, cidade ou área visitada. Tudo fica salvo neste aparelho, mesmo sem internet.</p>
+    <p>${esc(sc.hero)} Tudo fica salvo neste aparelho, mesmo sem internet.</p>
+  </div>
+  <div class="tabs" role="tablist">
+    ${Object.values(SCOPES).map(t => {
+      const qtd = todos.filter(p => scopeOf(p).id === t.id).length;
+      return `<button type="button" role="tab" class="tab ${t.id === sc.id ? 'on' : ''}" aria-selected="${t.id === sc.id}" data-action="aba" data-aba="${t.id}">${t.emoji} ${esc(t.aba)}${qtd ? ` <span class="tab-n">${qtd}</span>` : ''}</button>`;
+    }).join('')}
   </div>
   ${projects.length ? cards : `
     <div class="card empty">
-      <p>Nenhum projeto ainda.</p>
-      <p class="muted">Toque no botão abaixo para criar o primeiro (ex.: “MRN — Comunidade do Ajudante”).</p>
+      <p>Nenhum projeto de ${esc(sc.aba.toLowerCase())} ainda.</p>
+      <p class="muted">Toque no botão abaixo para criar o primeiro (${esc(sc.exemploProjeto)}).</p>
     </div>`}
-  <button class="btn primary big" data-action="novo-projeto">＋ Novo projeto</button>
+  <button class="btn primary big" data-action="novo-projeto">＋ Novo projeto de ${esc(sc.aba.toLowerCase())}</button>
   <div class="card" id="syncCard"></div>
   <div class="row gap">
     <button class="btn" data-action="importar">📥 Importar backup</button>
@@ -272,13 +291,13 @@ async function renderCentral() {
   for (const p of cloud.projects) {
     const nucleos = cloud.nucleos.filter(n => n.project_id === p.id);
     const fotos = cloud.photos.filter(f => f.project_id === p.id);
+    const sc = scopeOf(p.dados);
     const thumbs = fotos.slice(0, 8).map(f => f.kind === 'video' && f.drive_file_id
       ? `<a class="thumb is-video" href="${driveLink(f.drive_file_id)}" target="_blank" rel="noopener"><img loading="lazy" src="${publicPhotoUrl(f.storage_path)}" alt=""><span class="play-badge">▶ ${fmtDuration(f.duration)}</span></a>`
       : `<figure class="thumb"><img loading="lazy" src="${publicPhotoUrl(f.storage_path)}" alt=""></figure>`).join('');
     const nVideos = fotos.filter(f => f.kind === 'video').length;
     const nucleoLines = nucleos.map(n => {
-      const s2 = (n.dados || {}).s2 || {};
-      const extra = [s2.moradores ? s2.moradores + ' moradores' : '', s2.frequentadores ? s2.frequentadores + ' na EAS' : '']
+      const extra = sc.resumo.slice(0, 2).map(c => { const v = c.get(n.dados || {}); return isFilled(v) ? v + ' ' + c.curto : ''; })
         .filter(Boolean).join(' · ');
       return `<li><strong>${esc(n.nome)}</strong>${extra ? ' <span class="muted small">(' + esc(extra) + ')</span>' : ''}</li>`;
     }).join('');
@@ -287,7 +306,7 @@ async function renderCentral() {
       <div class="project-card-top"><h3>${esc(p.nome)}</h3>
         <span class="badge light">${esc((p.device || '') + (p.sync_em ? ' · ' + fmtDate(Date.parse(p.sync_em)) : ''))}</span></div>
       <p class="muted small">${esc((p.dados || {}).cliente || '')}${(p.dados || {}).local ? ' · ' + esc(p.dados.local) : ''}</p>
-      <div class="badges"><span class="badge">${nucleos.length} núcleo(s)</span><span class="badge">${fotos.length - nVideos} foto(s)</span>${nVideos ? `<span class="badge">${nVideos} vídeo(s)</span>` : ''}</div>
+      <div class="badges"><span class="badge light">${sc.emoji} ${esc(sc.aba)}</span><span class="badge">${nucleos.length} ${esc(sc.unidades)}</span><span class="badge">${fotos.length - nVideos} foto(s)</span>${nVideos ? `<span class="badge">${nVideos} vídeo(s)</span>` : ''}</div>
       ${nucleoLines ? `<ul class="central-nucleos">${nucleoLines}</ul>` : ''}
       ${thumbs ? `<div class="thumbs">${thumbs}</div>` : ''}
       <button class="btn small" data-action="central-baixar" data-pid="${p.id}">📥 Baixar para este aparelho</button>
@@ -324,24 +343,27 @@ async function renderProject() {
   const p = state.project;
   const nucleos = (await dbByIndex('nucleos', 'byProject', p.id)).sort((a, b) => (a.criadoEm || 0) - (b.criadoEm || 0));
   const fotosProjeto = await photosOf(null, p.id);
+  const sc = scopeOf(p);
 
   let fieldsHtml = '';
-  for (const f of PROJECT_FIELDS) fieldsHtml += fieldHTML(f, p[f.key], { scope: 'project' });
+  for (const f of sc.projectFields) fieldsHtml += fieldHTML(f, p[f.key], { scope: 'project' });
 
   let nucleoCards = '';
   for (const n of nucleos) {
-    const prog = nucleoProgress(n);
-    const done = SECTIONS.filter(s => sectionHasData(s, n.dados)).length;
+    const prog = nucleoProgress(n, sc.sections);
+    const done = sc.sections.filter(s => sectionHasData(s, n.dados)).length;
+    const nAlertas = sc.id === 'escola' ? alertasDe(n.dados, sc.sections).length : 0;
     nucleoCards += `
     <a class="card nucleo-card" href="#/p/${p.id}/n/${n.id}">
       <div class="project-card-top"><h3>${esc(n.nome)}</h3><span class="chevron">›</span></div>
       <div class="progress-line"><div class="progress-bar"><div class="progress-fill" style="width:${prog}%"></div></div><span class="muted small">${prog}%</span></div>
-      <p class="muted small">${done}/${SECTIONS.length} seções com dados · atualizado ${fmtDate(n.atualizadoEm)}</p>
+      <p class="muted small">${done}/${sc.sections.length} seções com dados · atualizado ${fmtDate(n.atualizadoEm)}</p>
+      ${nAlertas ? `<div class="badges"><span class="badge warn">⚠ ${nAlertas} ponto${nAlertas === 1 ? '' : 's'} de atenção</span></div>` : ''}
     </a>`;
   }
 
   $('#view').innerHTML = `
-  <nav class="crumbs"><a href="#/">‹ Projetos</a></nav>
+  <nav class="crumbs"><a href="#/">‹ Projetos</a> <span class="badge light">${sc.emoji} ${esc(sc.aba)}</span></nav>
   <div class="card">
     <label class="field"><span class="field-label">Nome do projeto</span>
       <input type="text" value="${esc(p.nome)}" data-scope="project" data-key="nome">
@@ -350,9 +372,9 @@ async function renderProject() {
     ${photoZoneHTML('projeto', '', fotosProjeto, 'Fotos gerais do projeto')}
   </div>
 
-  <h2 class="section-heading">Núcleos <span class="muted">(vilas, cidades, áreas)</span></h2>
-  ${nucleoCards || '<div class="card empty"><p class="muted">Nenhum núcleo ainda. Ex.: na MRN, cada vila é um núcleo; em Angola, cada cidade.</p></div>'}
-  <button class="btn primary big" data-action="novo-nucleo">＋ Novo núcleo</button>
+  <h2 class="section-heading">${esc(sc.Unidades)} <span class="muted">${esc(sc.subtitulo)}</span></h2>
+  ${nucleoCards || `<div class="card empty"><p class="muted">${esc(sc.nenhum)} ${esc(sc.exemploVazio)}</p></div>`}
+  <button class="btn primary big" data-action="novo-nucleo">＋ ${esc(sc.novo)}</button>
 
   <div class="row gap">
     <a class="btn accent" href="#/p/${p.id}/relatorio">📄 Relatório (PDF)</a>
@@ -369,10 +391,11 @@ async function renderNucleo() {
   const p = state.project, n = state.nucleo;
   const photos = await photosOf(n.id, p.id);
   state._nucleoPhotos = photos;
+  const sc = scopeOf(p);
 
   let sectionsHtml = '';
-  for (let i = 0; i < SECTIONS.length; i++) {
-    const sec = SECTIONS[i];
+  for (let i = 0; i < sc.sections.length; i++) {
+    const sec = sc.sections[i];
     const has = sectionHasData(sec, n.dados) || photos.some(ph => ph.section === sec.id);
     sectionsHtml += `
     <details class="card section" id="sec-${sec.id}" data-secid="${sec.id}" ${i === 0 ? 'open' : ''}>
@@ -382,19 +405,29 @@ async function renderNucleo() {
     </details>`;
   }
 
-  const prog = nucleoProgress(n);
+  const prog = nucleoProgress(n, sc.sections);
   $('#view').innerHTML = `
   <nav class="crumbs"><a href="#/p/${p.id}">‹ ${esc(p.nome)}</a></nav>
   <div class="nucleo-head card">
-    <label class="field"><span class="field-label">Nome do núcleo</span>
+    <label class="field"><span class="field-label">Nome ${sc.id === 'escola' ? 'da escola' : 'do núcleo'}</span>
       <input type="text" value="${esc(n.nome)}" data-scope="nucleo-nome">
     </label>
     <div class="progress-line"><div class="progress-bar"><div class="progress-fill" style="width:${prog}%"></div></div><span class="muted small" id="progText">${prog}%</span></div>
+    <div id="alertas"></div>
   </div>
   ${sectionsHtml}
   <div class="danger-zone">
-    <button class="btn danger-link" data-action="apagar-nucleo">Apagar núcleo…</button>
+    <button class="btn danger-link" data-action="apagar-nucleo">Apagar ${esc(sc.unidade)}…</button>
   </div>`;
+  updateAlertas();
+}
+
+/* pontos de atenção da escola, atualizados a cada resposta */
+function updateAlertas() {
+  const el = $('#alertas');
+  if (!el || !state.nucleo) return;
+  const lista = alertasDe(state.nucleo.dados, scopeOf(state.project).sections);
+  el.innerHTML = lista.length ? `<div class="alertas"><strong>⚠ Pontos de atenção</strong><ul>${lista.map(a => `<li>${esc(a)}</li>`).join('')}</ul></div>` : '';
 }
 
 function sectionBodyHTML(sec) {
@@ -520,6 +553,7 @@ function setFieldValue(el, value) {
   touchNucleo();
   updateSectionCheck(secId);
   updateProgressLine();
+  updateAlertas();
   maybeRerenderSection(secId, itemId, key);
 }
 
@@ -537,7 +571,7 @@ function updateSectionCheck(secId) {
 function updateProgressLine() {
   const el = $('#progText');
   if (!el || !state.nucleo) return;
-  const prog = nucleoProgress(state.nucleo);
+  const prog = nucleoProgress(state.nucleo, scopeOf(state.project).sections);
   el.textContent = prog + '%';
   const fill = $('.nucleo-head .progress-fill');
   if (fill) fill.style.width = prog + '%';
@@ -559,7 +593,7 @@ document.addEventListener('input', e => {
   const el = e.target;
   if (el.matches('#modal input, #modal textarea')) return;
   if (el.dataset && el.dataset.scope === 'nucleo-nome') {
-    state.nucleo.nome = el.value.trim() || 'Núcleo sem nome';
+    state.nucleo.nome = el.value.trim() || scopeOf(state.project).semNome;
     touchNucleo();
     return;
   }
@@ -595,16 +629,22 @@ document.addEventListener('click', async e => {
   if (!act) return;
   const action = act.dataset.action;
 
-  if (action === 'novo-projeto') {
-    promptModal('Novo projeto', 'Nome do projeto', 'Ex.: MRN — Comunidade do Ajudante', async nome => {
-      const p = { id: newId(), nome, criadoEm: Date.now(), atualizadoEm: Date.now() };
+  if (action === 'aba') {
+    setAba(act.dataset.aba);
+    await renderHome();
+  }
+  else if (action === 'novo-projeto') {
+    const sc = SCOPES[state.homeTab];
+    promptModal('Novo projeto de ' + sc.aba.toLowerCase(), 'Nome do projeto', sc.exemploProjeto, async nome => {
+      const p = { id: newId(), nome, escopo: sc.id, criadoEm: Date.now(), atualizadoEm: Date.now() };
       await dbPut('projects', p);
       requestPersistentStorage();
       location.hash = '#/p/' + p.id;
     });
   }
   else if (action === 'novo-nucleo') {
-    promptModal('Novo núcleo', 'Nome do núcleo', 'Ex.: Vila 1, Lucira, Aldeia Trocará', async nome => {
+    const sc = scopeOf(state.project);
+    promptModal(sc.novo, 'Nome ' + (sc.id === 'escola' ? 'da escola' : 'do núcleo'), sc.exemploNome, async nome => {
       const n = { id: newId(), projectId: state.project.id, nome, dados: {}, criadoEm: Date.now(), atualizadoEm: Date.now() };
       await dbPut('nucleos', n);
       location.hash = '#/p/' + state.project.id + '/n/' + n.id;
@@ -651,7 +691,7 @@ document.addEventListener('click', async e => {
     act.textContent = '⏳ Baixando…';
     try {
       const res = await downloadCloudProject(state._cloud, pid, (i, n) => { act.textContent = `⏳ Baixando fotos ${i}/${n}…`; });
-      toast(`Projeto baixado: ${res.nucleos} núcleo(s), ${res.fotos} foto(s) ✓`, 4000);
+      toast(`Projeto baixado: ${res.nucleos} núcleo(s)/escola(s), ${res.fotos} foto(s) ✓`, 4000);
       location.hash = '#/p/' + pid;
     } catch (e) {
       console.error(e);
@@ -676,7 +716,7 @@ document.addEventListener('click', async e => {
   else if (action === 'apagar-projeto') {
     const p = state.project;
     confirmModal('Apagar projeto',
-      `Apagar “${p.nome}” com todos os núcleos e fotos? Some deste aparelho e da nuvem da equipe. Essa ação não pode ser desfeita.`,
+      `Apagar “${p.nome}” com todos os núcleos, escolas e fotos? Some deste aparelho e da nuvem da equipe. Essa ação não pode ser desfeita.`,
       'Apagar definitivamente', async () => {
         const nucleos = await dbByIndex('nucleos', 'byProject', p.id);
         for (const n of nucleos) await dbDel('nucleos', n.id);
@@ -690,14 +730,15 @@ document.addEventListener('click', async e => {
   }
   else if (action === 'apagar-nucleo') {
     const n = state.nucleo;
-    confirmModal('Apagar núcleo',
-      `Apagar o núcleo “${n.nome}” com todas as informações e fotos? Some deste aparelho e da nuvem da equipe.`,
+    const sc = scopeOf(state.project);
+    confirmModal('Apagar ' + sc.unidade,
+      `Apagar ${sc.id === 'escola' ? 'a escola' : 'o núcleo'} “${n.nome}” com todas as informações e fotos? Some deste aparelho e da nuvem da equipe.`,
       'Apagar', async () => {
         const photos = await dbByIndex('photos', 'byNucleo', n.id);
         for (const ph of photos) await dbDel('photos', ph.id);
         await dbDel('nucleos', n.id);
         queueCloudDelete('nucleo', n.id);
-        toast('Núcleo apagado.');
+        toast(sc.Unidade + ' apagad' + (sc.id === 'escola' ? 'a.' : 'o.'));
         location.hash = '#/p/' + state.project.id;
       });
   }
@@ -906,7 +947,9 @@ function helpModal() {
     <h3>Como usar</h3>
     <ol class="help">
       <li><strong>Instale no celular:</strong> abra este site com internet uma vez e use “Adicionar à tela inicial”. Depois disso, funciona 100% offline (MRN, Angola, qualquer lugar).</li>
-      <li><strong>Crie um projeto</strong> para cada diagnóstico (ex.: MRN, Pumangol) e <strong>um núcleo</strong> para cada vila/cidade.</li>
+      <li><strong>Escolha a aba</strong> na tela inicial: <strong>Comunidades</strong> (vilas, cidades, aldeias) ou <strong>Escolas</strong> (cada unidade escolar). As perguntas são diferentes em cada uma.</li>
+      <li><strong>Crie um projeto</strong> para cada diagnóstico (ex.: MRN, Água nas Escolas Belém) e cadastre <strong>um núcleo</strong> para cada vila/cidade ou <strong>uma escola</strong> para cada unidade visitada.</li>
+      <li><strong>Escolas:</strong> respostas que podem travar a instalação (pressão fraca, ferrugem, obra prevista, fonte perto de fossa ou lixão) aparecem em “Pontos de atenção” no topo da escola e no PDF.</li>
       <li><strong>Preencha as seções</strong> tocando nelas. Tudo salva sozinho a cada toque, pode fechar e voltar depois.</li>
       <li><strong>Fotos e vídeos:</strong> em cada seção, use “Foto”, “Vídeo” ou “Galeria”. Toque na miniatura para dar legenda, assistir ou apagar. Prefira vídeos curtos (até 1 ou 2 minutos): ficam guardados no aparelho e sobem para o Drive quando houver internet.</li>
       <li><strong>Sem sinal:</strong> pode trabalhar normalmente. O cartão “Nuvem da equipe” mostra o que falta enviar; quando o sinal voltar, envia sozinho (e retoma vídeo pela metade).</li>
