@@ -136,7 +136,6 @@ const SCHOOL_SECTIONS = [
     id: 'e1', emoji: '📍', title: 'Identificação da escola',
     fields: [
       { key: 'gps',        label: 'Coordenadas GPS da escola', type: 'gps' },
-      { key: 'inep',       label: 'Código INEP', type: 'text', placeholder: '8 dígitos, consta no Censo Escolar' },
       { key: 'rede',       label: 'Rede', type: 'radio', options: ['Municipal', 'Estadual', 'Federal', 'Comunitária / filantrópica'] },
       { key: 'zona',       label: 'Localização', type: 'radio', options: ['Urbana', 'Rural'] },
       { key: 'diferenciada', label: 'Localização diferenciada', type: 'radio', options: ['Não se aplica', 'Terra indígena', 'Comunidade quilombola', 'Ribeirinha / ilha', 'Assentamento'] },
@@ -188,11 +187,13 @@ const SCHOOL_SECTIONS = [
       { key: 'trocaRefil',  label: 'A escola troca refil de carvão do bebedouro?', type: 'radio', options: ['Sim', 'Não', 'Não se aplica'] },
       { key: 'refilFreq',   label: 'De quanto em quanto tempo troca o refil?', type: 'text', placeholder: 'Ex.: a cada 2 meses', conditional: { field: 'trocaRefil', operator: 'equals', value: 'Sim' } },
       { key: 'refilCusto',  label: 'Custo de cada troca de refil', type: 'number', unit: 'reais', conditional: { field: 'trocaRefil', operator: 'equals', value: 'Sim' } },
-      { key: 'compraMineral', label: 'A escola ou os servidores compram água mineral?', type: 'radio', options: ['Sim', 'Não'] },
-      { key: 'mineralPara', label: 'Para quem é a água mineral?', type: 'radio', options: ['Para todos', 'Só sala dos professores / administração', 'Só educação infantil'], conditional: { field: 'compraMineral', operator: 'equals', value: 'Sim' } },
-      { key: 'quemPaga',    label: 'Quem paga?', type: 'radio', options: ['Escola', 'Secretaria', 'Servidores fazem vaquinha'], conditional: { field: 'compraMineral', operator: 'equals', value: 'Sim' } },
-      { key: 'galoesSemana', label: 'Galões de 20 L por semana', type: 'number', unit: 'galões', conditional: { field: 'compraMineral', operator: 'equals', value: 'Sim' } },
-      { key: 'gastoSemana', label: 'Gasto semanal com água mineral', type: 'number', unit: 'reais', conditional: { field: 'compraMineral', operator: 'equals', value: 'Sim' } },
+      { key: 'compraAgua',  label: 'A escola ou os servidores compram água?', type: 'radio', options: ['Sim', 'Não'] },
+      { key: 'oQueCompra',  label: 'O que compram', type: 'checkbox', options: ['Galão de água mineral', 'Garrafinhas / fardos', 'Caminhão pipa', 'Outro'], conditional: { field: 'compraAgua', operator: 'equals', value: 'Sim' } },
+      { key: 'oQueCompraOutro', label: 'O que mais compram?', type: 'text', conditional: { field: 'oQueCompra', operator: 'includes', value: 'Outro' } },
+      { key: 'gastoMes',    label: 'Quanto gastam por mês comprando água (somando galão, caminhão pipa e o resto)', type: 'number', unit: 'reais por mês', conditional: { field: 'compraAgua', operator: 'equals', value: 'Sim' } },
+      { key: 'galoesSemana', label: 'Galões de 20 L por semana', type: 'number', unit: 'galões', conditional: { field: 'oQueCompra', operator: 'includes', value: 'Galão de água mineral' } },
+      { key: 'compraPara',  label: 'Para quem é a água comprada?', type: 'radio', options: ['Para todos', 'Só sala dos professores / administração', 'Só educação infantil', 'Cozinha'], conditional: { field: 'compraAgua', operator: 'equals', value: 'Sim' } },
+      { key: 'quemPaga',    label: 'Quem paga?', type: 'radio', options: ['Escola', 'Secretaria', 'Servidores fazem vaquinha'], conditional: { field: 'compraAgua', operator: 'equals', value: 'Sim' } },
       { key: 'notaAgua',    label: 'Nota da direção para a água que bebem hoje (0 a 10)', type: 'number' },
       { key: 'obs',         label: 'Notas e observações', type: 'textarea', rows: 2 }
     ]
@@ -248,9 +249,8 @@ const SCHOOL_SECTIONS = [
     fields: [
       { key: 'manutencao',  label: 'Quem vai cuidar da manutenção (nome e função)', type: 'textarea', rows: 2, placeholder: 'Normalmente a equipe de serviços gerais' },
       { key: 'engajamento', label: 'Engajamento da direção', type: 'radio', options: ['Alto', 'Médio', 'Baixo'] },
-      { key: 'oficina',     label: 'A escola quer receber a Oficina WASH?', type: 'radio', options: ['Sim', 'Não', 'Talvez'] },
-      { key: 'espacoOficina', label: 'Espaço para a oficina', type: 'checkbox', options: ['Sala de aula', 'Refeitório', 'Biblioteca', 'Quadra', 'Pátio'], conditional: { field: 'oficina', operator: 'notEquals', value: 'Não' } },
-      { key: 'turmasOficina', label: 'Turmas e faixas etárias para a oficina', type: 'textarea', rows: 2, placeholder: 'Grupos de até 50 alunos da mesma faixa etária', conditional: { field: 'oficina', operator: 'notEquals', value: 'Não' } },
+      { key: 'espacoOficina', label: 'Espaço para a Oficina WASH', type: 'checkbox', options: ['Sala de aula', 'Refeitório', 'Biblioteca', 'Quadra', 'Pátio'] },
+      { key: 'turmasOficina', label: 'Turmas e faixas etárias para a oficina', type: 'textarea', rows: 2, placeholder: 'Grupos de até 50 alunos da mesma faixa etária' },
       { key: 'relatos',     label: 'Relatos da direção, professores e alunos', type: 'textarea', rows: 3 },
       { key: 'obs',         label: 'Notas e observações', type: 'textarea', rows: 2 }
     ]
