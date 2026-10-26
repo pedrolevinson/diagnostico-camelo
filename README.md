@@ -20,14 +20,14 @@ A tela inicial tem duas abas, uma por escopo de diagnóstico. O projeto nasce na
 
 Cada escola tem 9 seções (`SCHOOL_SECTIONS` em `js/schema.js`), montadas a partir dos relatórios finais do Água nas Escolas (Opella Belém e Sorocaba, 2025):
 
-1. 📍 Identificação da escola (GPS, INEP, rede, localização, direção, ponto focal)
+1. 📍 Identificação da escola (GPS, rede, localização, direção, ponto focal)
 2. 👥 Alunos e equipe (etapas de ensino, turnos, alunos por faixa etária, PCD, professores, funcionários)
 3. 💧 Abastecimento de água (lista de fontes: tipo, regularidade, problemas percebidos, riscos perto da fonte)
-4. 🥤 Água de beber hoje (bebedouros, refil, compra de água mineral e gasto)
+4. 🥤 Água de beber hoje (bebedouros, refil, compra de água: galão, caminhão pipa, gasto por mês)
 5. 🍽️ Cozinha e merenda (refeições e suco por dia, água do preparo)
 6. 🔬 Qualidade da água e saúde (casos e faltas nos últimos 3 meses, seca e chuva)
 7. 🏗️ Estrutura e local da EAS (andares, caixa d'água, pressão, ponto de água, tomada, obra prevista)
-8. 🤝 Manutenção e educação (responsável, Oficina WASH)
+8. 🤝 Manutenção e educação (responsável, espaço e turmas da Oficina WASH, que sempre acontece)
 9. 📋 Conclusões preliminares (apta ou não, quantidade de EAS)
 
 Campos com `alerta` no schema geram os **Pontos de atenção** da escola (topo da tela, cartão do projeto, relatório e PDF).
